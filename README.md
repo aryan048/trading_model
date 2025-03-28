@@ -40,6 +40,7 @@ Before you can run the code, make sure to install the following dependencies:
 
 3. **Configure SMS**:
    - Set phone number in .env file to be notified upon data dump completion
+   - Note: You must be running this on a mac for the sms notifier to work
 
 3. **Download Data**:
    - Use the `mc` command to download specific stock data. For example:
