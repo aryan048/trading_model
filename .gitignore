@@ -3,3 +3,8 @@
 src/pre_processing/stock_data
 *.pyc
 __pycache__/
+stock_data.db
+src/.DS_Store
+src/__pycache__/SMS_notifier.cpython-313.pyc
+.gitignore
+src/pre_processing/__pycache__/s3_download.cpython-313.pyc
