@@ -14,9 +14,6 @@ engine = create_engine(f'sqlite:///{database}')
 
 def process_and_insert_files():
     
-    # Now, connect to the SQLite database
-    engine = create_engine(f'sqlite:///{database}')
-    
     # Path to the stock data directory
     data_dir = 'src/pre_processing/stock_data'
 
