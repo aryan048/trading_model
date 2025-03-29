@@ -4,6 +4,9 @@ from datetime import datetime, timedelta
 import gzip
 import shutil
 import subprocess
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from src import SMS_notifier
 
 # Set up the start date and end date
 end_date = datetime.now()
@@ -16,7 +19,7 @@ def download_and_unzip(ticker, date):
     file_name = f"{date.strftime('%Y-%m-%d')}.csv.gz"
     
     # Specify a valid directory path, such as your Downloads folder
-    file_path = os.path.join(os.path.expanduser('~'), 'Downloads', 'VSCode Repos', 'trading_model', 'stock_data', year_month, file_name)
+    file_path = os.path.join(os.path.expanduser('~'), 'Downloads', 'VSCode Repos', 'trading_model', 'src', 'pre_processing', 'stock_data', year_month, file_name)
 
     # Make the directories if they don't exist
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
@@ -27,7 +30,7 @@ def download_and_unzip(ticker, date):
 
     # Check if the file was successfully downloaded
     if result.returncode != 0:
-        print(f"{date} is a weekend")
+        print(f"{date} is a weekend/holiday")
         return
 
     # Check if the file exists before unzipping
@@ -45,10 +48,12 @@ def download_and_unzip(ticker, date):
 def download_data():
     # Loop through each year and month from 5 years ago to today
     current_date = start_date
-    while current_date <= end_date:
+    while current_date < end_date:
         download_and_unzip("ticker", current_date)
         # Increment date by 1 month
         current_date += timedelta(days=1)  # Approximation of 1 month
+    SMS_notifier.send_sms_notification("S3 download script completed successfully.")
 
 if __name__ == "__main__":
     download_data()    
+    SMS_notifier.send_sms_notification("S3 download script completed successfully.")
