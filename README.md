@@ -50,19 +50,8 @@ Before you can run the code, make sure to install the following dependencies:
    - This will download a specific file for December 31, 2024, into the `Downloads` directory.
    - Alternatively, run main.py to start downloading data beginning 5 years ago, up until now
 
-4. **Resolve pandas_ta error**
-   - The squeeze_pro file has an incorrect import, head to this directory
-   '''bash
-   /Users/aryanhazra/Library/Caches/pypoetry/virtualenvs/trading-model-vnO__Cft-py3.13/lib/python3.13/site-packages/pandas_ta/momentum
-   '''bash
-   - and change 
-   '''bash
-   from numpy import NaN as npNaN
-   '''bash
-   - to
-   '''bash
-   from numpy import nan as npNaN
-   '''bash
+4. **Download ta-lib**
+   - Use brew to install ta-lib first, then poetry to add it
 
 ## Running the Model
 
