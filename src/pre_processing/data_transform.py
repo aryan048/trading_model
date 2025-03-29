@@ -2,6 +2,7 @@ import os
 import pandas as pd
 from sqlalchemy import create_engine
 import sys
+from tqdm import tqdm  # Import tqdm for progress bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import SMS_notifier
 
@@ -54,6 +55,28 @@ def process_and_insert_files():
 
     SMS_notifier.send_sms_notification("DB populated successfully")
 
+def split_existing_database():
+    # Read the entire database into a DataFrame
+    query = "SELECT * FROM stock_data"  # Assuming all data is in a single table named 'stock_data'
+    try:
+        df = pd.read_sql(query, engine)
+    except Exception as e:
+        print(f"Error reading from database: {e}")
+        return
+    
+    grouped = df.groupby('ticker')
+
+    for ticker, ticker_df in tqdm(grouped, desc="Splitting database"):
+        ticker_df.sort_values(by='date', ascending=True, inplace=True)
+
+        # Insert data into the corresponding table
+        try:
+            ticker_df.to_sql(ticker, engine, if_exists='replace', index=False)
+        except Exception as e:
+            print(f"Error creating table {ticker}: {e}")
+
+    SMS_notifier.send_sms_notification("Database split into separate tables successfully.")
+
 if __name__ == '__main__':
     process_and_insert_files()
-    SMS_notifier.send_sms_notification("DB populated successfully")
+    split_existing_database()
