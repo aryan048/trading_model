@@ -6,7 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src import SMS_notifier
 
 # SQLite connection string
-database = 'stock_data.db'
+database = 'src/pre_processing/stock_data/stock_data.db'
 
 # Create SQLAlchemy engine for connecting to SQLite
 engine = create_engine(f'sqlite:///{database}')
