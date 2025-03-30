@@ -1,7 +1,9 @@
 import time  # Import the time module
 import pre_processing.s3_download as s3_download
-import pre_processing.data_transform as data_transform
-from sqlalchemy import create_engine, inspect
+import src.pre_processing.split_db as split_db
+import models.random_forest as random_forest
+from sqlalchemy import create_engine
+
 
 #db does not exist yet
 database = 'src/pre_processing/stock_data/stock_data.db'
@@ -11,10 +13,14 @@ engine = create_engine(f'sqlite:///{database}')
 if __name__ == "__main__":
     start_time = time.time()  # Record the start time
     
-    #s3_download.download_data()
+    s3_download.download_data()
     
-    data_transform.process_and_insert_files(engine)
-    data_transform.process_database(engine)
+    split_db.process_and_insert_files(engine)
+    split_db.process_database(engine)
+
+    #random_forest.train_model(engine)
+
+
     
     end_time = time.time()  # Record the end time
     elapsed_time = end_time - start_time  # Calculate elapsed time
