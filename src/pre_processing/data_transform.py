@@ -6,13 +6,7 @@ from tqdm import tqdm  # Import tqdm for progress bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import SMS_notifier
 
-# SQLite connection string
-database = 'src/pre_processing/stock_data/stock_data.db'
-
-# Create SQLAlchemy engine for connecting to SQLite
-engine = create_engine(f'sqlite:///{database}')
-
-def process_and_insert_files():
+def process_and_insert_files(engine):
     
     # Path to the stock data directory
     data_dir = 'src/pre_processing/stock_data'
@@ -52,7 +46,7 @@ def process_and_insert_files():
 
     SMS_notifier.send_sms_notification("DB populated successfully")
 
-def split_existing_database():
+def split_existing_database(engine):
     # Read the entire database into a DataFrame
     query = "SELECT * FROM stock_data"  # Assuming all data is in a single table named 'stock_data'
     try:
