@@ -5,6 +5,7 @@ import sys
 from tqdm import tqdm  # Import tqdm for progress bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import SMS_notifier
+from pre_processing import reformat_stock_splits
 
 def process_and_insert_files(engine):
     
@@ -46,7 +47,7 @@ def process_and_insert_files(engine):
 
     SMS_notifier.send_sms_notification("DB populated successfully")
 
-def split_existing_database(engine):
+def process_database(engine):
     # Read the entire database into a DataFrame
     query = "SELECT * FROM stock_data"  # Assuming all data is in a single table named 'stock_data'
     try:
@@ -57,17 +58,15 @@ def split_existing_database(engine):
     
     grouped = df.groupby('ticker')
 
-    for ticker, ticker_df in tqdm(grouped, desc="Splitting database"):
+    for ticker, ticker_df in tqdm(grouped, desc="Processing DB's", unit="ticker"):
         ticker_df.sort_values(by='date', ascending=True, inplace=True)
 
-        # Insert data into the corresponding table
-        try:
-            ticker_df.to_sql(ticker, engine, if_exists='replace', index=False)
-        except Exception as e:
-            print(f"Error creating table {ticker}: {e}")
+        #call reformat stock splits
+        reformat_stock_splits.reformat_stock_splits(ticker, ticker_df, engine)
+        break
 
-    SMS_notifier.send_sms_notification("Database split into separate tables successfully.")
+    SMS_notifier.send_sms_notification("DB's processed succesfully")
 
 if __name__ == '__main__':
     process_and_insert_files()
-    split_existing_database()
+    process_database
