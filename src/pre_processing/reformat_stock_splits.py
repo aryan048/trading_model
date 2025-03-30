@@ -53,8 +53,8 @@ def edit_db(stock_splits, table, engine):
 
         df.to_sql(table, engine, if_exists='replace', index=False)
 
-def reformat_stock_splits(table_names, engine):
-    for table in tqdm(table_names, desc="Processing tables"):
+def reformat_stock_splits(tables, engine):
+    for table in tqdm(tables, desc="Processing tables"):
 
         if table == "stock_data":
             continue
