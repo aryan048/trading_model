@@ -63,7 +63,6 @@ def process_database(engine):
 
         #call reformat stock splits
         reformat_stock_splits.reformat_stock_splits(ticker, ticker_df, engine)
-        break
 
     SMS_notifier.send_sms_notification("DB's processed succesfully")
 
