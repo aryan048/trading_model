@@ -5,6 +5,7 @@ import gzip
 import shutil
 import subprocess
 import sys
+from tqdm import tqdm  # Import tqdm for progress bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import SMS_notifier
 
@@ -30,7 +31,6 @@ def download_and_unzip(ticker, date):
 
     # Check if the file was successfully downloaded
     if result.returncode != 0:
-        print(f"{date} is a weekend/holiday")
         return
 
     # Check if the file exists before unzipping
@@ -41,17 +41,21 @@ def download_and_unzip(ticker, date):
                 shutil.copyfileobj(f_in, f_out)
         # Remove the original gzipped file after unzipping
         os.remove(file_path)
-        print(f"{date} downloaded and unzipped successfully.")
     else:
         print(f"File {file_path} not found. Skipping unzip.")
 
 def download_data():
     # Loop through each year and month from 5 years ago to today
     current_date = start_date
-    while current_date < end_date:
-        download_and_unzip("ticker", current_date)
-        # Increment date by 1 month
-        current_date += timedelta(days=1)  # Approximation of 1 month
+    total_days = (end_date - start_date).days  # Calculate the total number of days for the progress bar
+
+    with tqdm(total=total_days, desc="Downloading data", unit="day") as pbar:
+        while current_date < end_date:
+            download_and_unzip("ticker", current_date)
+            # Increment date by 1 day
+            current_date += timedelta(days=1)
+            pbar.update(1)  # Update the progress bar by 1 step
+
     SMS_notifier.send_sms_notification("S3 download script completed successfully.")
 
 if __name__ == "__main__":
