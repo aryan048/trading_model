@@ -16,7 +16,7 @@ def create_technical_indicators(ticker, ticker_df, engine):
         'middleband':lambda x: ta.BBANDS(x['close'], timeperiod=5, nbdevup=2, nbdevdn=0)[1],
         'lowerband':lambda x: ta.BBANDS(x['close'], timeperiod=5, nbdevup=2, nbdevdn=0)[2],
         'dema':lambda x: ta.DEMA(x['close'], timeperiod=5),
-        "ema":lambda x: ta.EMA(x['close'], timeperiod=5),
+        'ema':lambda x: ta.EMA(x['close'], timeperiod=5),
         'ht_trendline':lambda x: ta.HT_TRENDLINE(x['close']),
         'kama':lambda x: ta.KAMA(x['close'], timeperiod=30),
         'ma':lambda x: ta.MA(x['close'], timeperiod=30, matype=0),
