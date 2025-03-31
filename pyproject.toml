@@ -14,11 +14,16 @@ dependencies = [
     "sqlalchemy (>=2.0.40,<3.0.0)",
     "ta-lib (>=0.6.3,<0.7.0)",
     "matplotlib (>=3.10.1,<4.0.0)",
+    "dask (>=2025.3.0,<2026.0.0)",
+    "pyarrow (>=19.0.1,<20.0.0)",
 ]
 
 [tool.poetry]
 packages = [{include = "trading_model", from = "src"}]
 
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
