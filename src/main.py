@@ -1,7 +1,7 @@
 import time  # Import the time module
 import pre_processing.s3_download as s3_download
 import src.pre_processing.split_db as split_db
-import models.random_forest as random_forest
+import runpy
 from sqlalchemy import create_engine
 
 
@@ -18,10 +18,8 @@ if __name__ == "__main__":
     split_db.process_and_insert_files(engine)
     split_db.process_database(engine)
 
-    #random_forest.train_model(engine)
+    runpy.run_path('src/models/random_forest.ipynb')
 
-
-    
     end_time = time.time()  # Record the end time
     elapsed_time = end_time - start_time  # Calculate elapsed time
     print(f"Script completed in {elapsed_time:.2f} seconds.")
