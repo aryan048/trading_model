@@ -6,6 +6,7 @@ from tqdm import tqdm  # Import tqdm for progress bar
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from src import SMS_notifier
 from pre_processing import reformat_stock_splits
+from sqlalchemy import inspect, text
 
 def process_and_insert_files(engine):
     
@@ -63,6 +64,11 @@ def process_database(engine):
 
         #call reformat stock splits
         reformat_stock_splits.reformat_stock_splits(ticker, ticker_df, engine)
+
+    #usually i would need to drop the connection and reinstantiate it, but this is the end of the run anyways
+    with engine.connect() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS stock_data;"))
+        conn.commit()  # Required for changes in SQLAlchemy 2.0
 
     SMS_notifier.send_sms_notification("DB's processed succesfully")
 
