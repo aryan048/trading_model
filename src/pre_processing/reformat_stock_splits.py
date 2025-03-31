@@ -23,7 +23,6 @@ def stock_split_api(ticker, max_retries=5, retry_delay=60):
             except Exception as e:
                 time.sleep(5)  # Wait before retrying
 
-
     return response
 
 def edit_db(stock_splits, ticker, ticker_df, engine):
@@ -54,7 +53,7 @@ def reformat_stock_splits(ticker, ticker_df, engine):
     #save time if no stock splits (wont load the df)
     if stock_splits:
         stock_splits.sort(key=lambda x: x['execution_date'], reverse=True)
-        edit_db(stock_splits, ticker, ticker_df, engine)
+    edit_db(stock_splits, ticker, ticker_df, engine)
 
 if __name__ == "__main__":
     reformat_stock_splits(['AAPL'])  # Example tickers, replace with actual ones        
