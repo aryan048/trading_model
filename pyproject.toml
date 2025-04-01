@@ -16,6 +16,8 @@ dependencies = [
     "matplotlib (>=3.10.1,<4.0.0)",
     "dask (>=2025.3.0,<2026.0.0)",
     "pyarrow (>=19.0.1,<20.0.0)",
+    "scikit-learn (>=1.6.1,<2.0.0)",
+    "numpy (>=2.2.4)"
 ]
 
 [tool.poetry]
