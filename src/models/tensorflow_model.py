@@ -11,6 +11,7 @@ from tqdm import tqdm
 DATABASE_URL = "sqlite:////Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/pre_processing/stock_data/stock_data.db"
 engine = create_engine(DATABASE_URL)
 
+
 # Get all table names (assuming each table is a stock ticker)
 def get_stock_tables():
     inspector = inspect(engine)
@@ -38,7 +39,6 @@ def prepare_data(df, ticker_mapping, lookback=30):
 
     # Encode 'ticker' as a numeric feature
     df["ticker_encoded"] = df["ticker"].map(ticker_mapping)
-    print(df['ticker_encoded'].unique())
 
     # Ensure 'close' is the first column in scaled data (important for y selection)
     feature_columns = ['close'] + [col for col in df.columns if col not in ['ticker', 'close']]
@@ -58,7 +58,7 @@ def prepare_data(df, ticker_mapping, lookback=30):
 
 
 # Define or load LSTM model
-def build_or_load_model(input_shape, model_path="lstm_model.h5"):
+def build_or_load_model(input_shape, model_path="my_model.keras"):
     try:
         model = load_model(model_path)
         print("Loaded existing model.")
@@ -78,7 +78,7 @@ def build_or_load_model(input_shape, model_path="lstm_model.h5"):
 
 # Train model on multiple tickers
 def train_model():
-    tickers = np.array(get_stock_tables())
+    tickers = np.array(get_stock_tables())[:5]
 
 
     encoder = LabelEncoder()
@@ -114,13 +114,13 @@ def train_model():
             continue
 
     # Save model after training on all tickers
-    model.save("lstm_model.h5")
+    model.save('my_model.keras')
     print("Model saved.")
 
 
 # Predict next 30 days for each stock
 def predict_next_30_days():
-    tickers = np.array(get_stock_tables())
+    tickers = np.array(get_stock_tables())[:5]
 
 
     encoder = LabelEncoder()
@@ -129,14 +129,14 @@ def predict_next_30_days():
     # Save mapping
     ticker_mapping = {ticker: idx for idx, ticker in enumerate(encoder.classes_)}
 
-    model = load_model("lstm_model.h5")
+    model = load_model("my_model.keras")
 
     predictions = {}
     for ticker in tickers:
         df = load_stock_data(ticker)
         
         if not df.empty:
-            X, _, scaler = prepare_data(df)
+            X, _, scaler = prepare_data(df, ticker_mapping)
 
             last_sequence = X[-1].reshape(1, X.shape[1], X.shape[2])
             predicted_scaled = model.predict(last_sequence)[0]
@@ -148,7 +148,7 @@ def predict_next_30_days():
 
 
 # Run training & prediction
-train_model()
+#train_model()
 predictions = predict_next_30_days()
 
 
