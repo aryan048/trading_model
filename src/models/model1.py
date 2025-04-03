@@ -15,39 +15,16 @@ import optuna
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 
-# Define the objective function for Optuna
-def objective(trial):
-    # Suggest hyperparameters
-    params = {
-        "lstm_units_1": trial.suggest_int('lstm_units_1', 64, 512, step=64),
-        "lstm_units_2": trial.suggest_int('lstm_units_2', 64, 512, step=64),
-        "dense_units": trial.suggest_int('dense_units', 64, 256, step=64),
-        "dropout_rate": trial.suggest_float('dropout_rate', 0.2, 0.7),
-        "learning_rate": trial.suggest_float('learning_rate', 1e-5, 1e-2, log=True),
-        "optimizer": trial.suggest_categorical('optimizer', ['adam', 'rmsprop']),
-    }
-
-    # Build the model
-    model = keras.models.Sequential()
-    model.add(keras.layers.LSTM(params["lstm_units_1"], return_sequences=True, input_shape=(X_train.shape[1], 1)))
-    model.add(keras.layers.LSTM(params["lstm_units_2"], return_sequences=False))
-    model.add(keras.layers.Dense(params["dense_units"], activation="relu"))
-    model.add(keras.layers.Dropout(params["dropout_rate"]))
-    model.add(keras.layers.Dense(1))
-
-    # Compile model
-    optimizer = keras.optimizers.Adam(learning_rate=params["learning_rate"]) if params["optimizer"] == 'adam' else keras.optimizers.RMSprop(learning_rate=params["learning_rate"])
-    model.compile(optimizer=optimizer, loss="mae", metrics=[keras.metrics.RootMeanSquaredError()])
-
-    # Train the model
-    early_stopping = keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
-    history = model.fit(X_train, y_train, validation_split=0.2, epochs=10, batch_size=32, callbacks=[early_stopping], verbose=0)
-
-    return min(history.history['val_loss'])
+best_hyperparams = {'lstm_units_1': 448, 
+                        'lstm_units_2': 512, 
+                        'dense_units': 256, 
+                        'dropout_rate': 0.5863386331655234, 
+                        'learning_rate': 0.0003511266706629626, 
+                        'optimizer': 'rmsprop'}
 
 
 
-data = yf.Ticker("MSFT").history(period="max")
+data = yf.Ticker("AAPL").history(period="max")
 data.reset_index(inplace=True)
 data.columns = data.columns.str.lower()
 print(data.head())
@@ -83,17 +60,7 @@ X_train, y_train = np.array(X_train), np.array(y_train)
 
 X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
 
-
-# Create an Optuna study
-study = optuna.create_study(direction="minimize")
-study.optimize(objective, n_trials=50)
-
-# Store best hyperparameters in a dictionary
-best_hyperparams = study.best_params
-
-print("Best hyperparameters:", best_hyperparams)
-
-
+#Best hyperparameters: {'lstm_units_1': 448, 'lstm_units_2': 512, 'dense_units': 256, 'dropout_rate': 0.5863386331655234, 'learning_rate': 0.0003511266706629626, 'optimizer': 'rmsprop'}
 # Build the model using the best hyperparameters
 model = keras.models.Sequential()
 model.add(keras.layers.LSTM(best_hyperparams["lstm_units_1"], return_sequences=True, input_shape=(X_train.shape[1], 1)))
@@ -108,7 +75,6 @@ model.compile(optimizer=optimizer, loss="mae", metrics=[keras.metrics.RootMeanSq
 
 # Train the final model with the best hyperparameters
 early_stopping = keras.callbacks.EarlyStopping(monitor='loss', patience=10, restore_best_weights=True)
-model.fit(X_train, y_train, epochs=100, batch_size=32, callbacks=[early_stopping])
 
 # Train the model with as many epochs as possible
 training = model.fit(X_train, y_train, epochs=1000, batch_size=32, callbacks=[early_stopping])
