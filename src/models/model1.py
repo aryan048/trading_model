@@ -17,14 +17,16 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 best_hyperparams = {'lstm_units_1': 448, 
                         'lstm_units_2': 512, 
-                        'dense_units': 256, 
+                        'dense_units': 256,
                         'dropout_rate': 0.5863386331655234, 
                         'learning_rate': 0.0003511266706629626, 
                         'optimizer': 'rmsprop'}
 
+ticker = input("Please enter a ticker: ")
 
 
-data = yf.Ticker("AAPL").history(period="max")
+
+data = yf.Ticker(ticker).history(period="max")
 data.reset_index(inplace=True)
 data.columns = data.columns.str.lower()
 print(data.head())
@@ -55,6 +57,11 @@ X_train, y_train = [], []
 for i in range(60, len(training_data)-30):
     X_train.append(training_data[i-60:i, 0])
     y_train.append(training_data[i+30,0])
+
+    #past_60_days = []
+    #for i in range(i-60,i):
+        #past_60_days.append([training_data[i,0],feature1,feature2,feature3...])
+
     
 X_train, y_train = np.array(X_train), np.array(y_train)
 
