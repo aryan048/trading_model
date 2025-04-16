@@ -28,7 +28,7 @@ class SPScraper:
                     date_added = cells[5].text.strip() if len(cells) > 6 else None
                     current_symbols.append({
                         'symbol': symbol,
-                        'date': date_added,
+                        'date_added': date_added,
                     })
         
         # Create DataFrames
