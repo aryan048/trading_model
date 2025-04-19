@@ -1,3 +1,10 @@
+import sys
+
+# Add the absolute path to the project root directory
+project_root = "/Users/aryanhazra/Downloads/Github Repos/trading_model"
+if project_root not in sys.path:
+    sys.path.append(project_root)
+    
 import pandas as pd
 import yfinance as yf
 from tqdm import tqdm
@@ -12,13 +19,13 @@ import joblib
 import matplotlib.pyplot as plt
 from datetime import datetime
 import matplotlib.dates as mdates
-from models.model4.utils.create_df import create_df
-from models.utils.sp_scraper import SPScraper
+from src.models.model4.utils.create_df import create_df
+from src.models.utils.sp_scraper import SPScraper
 
 # Initialize SPScraper
 scraper = SPScraper()
 
-model = keras.models.load_model('/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/model4.keras')
+model = keras.models.load_model('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/model4.keras')
 
 test_data_from = input(f"Enter train/test split year: " )
 # Convert empty string to None
@@ -199,6 +206,12 @@ for i in tqdm(range(start_idx, len(spy_data) - 21, 21), desc="Processing SPY dat
     # Draw the plot
     plt.draw()
     plt.pause(0.1)  # Small pause to allow the plot to update
+
+# Turn off interactive mode to finalize the plot
+plt.ioff()
+
+# Show the plot and keep it open until manually closed
+plt.show()
 
 
 
