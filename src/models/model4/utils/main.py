@@ -1,5 +1,12 @@
+import sys
+
+# Add the absolute path to the project root directory
+project_root = "/Users/aryanhazra/Downloads/Github Repos/trading_model"
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 import pandas as pd
-from models.utils.sp_scraper import SPScraper
+from src.models.utils.sp_scraper import SPScraper
 import yfinance as yf
 from tqdm import tqdm
 import numpy as np
@@ -11,35 +18,19 @@ from IPython.display import clear_output
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import joblib
 import os
-from models.model4.utils.create_df import create_df
+from src.models.model4.utils.create_df import create_df
 
 
 # Initialize SPScraper
 scraper = SPScraper()
 
-model = keras.models.load_model('/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/model4.keras')
+model = keras.models.load_model('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/model4.keras')
 
 # Load all scalers
-df_scaler = joblib.load('/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/scaler_df.pkl')
-
-# Initialize the scalers dictionary
-scalers = {}
-
-# Path to the scalers directory
-scalers_dir = '/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/scalers'
-
-ticker_scalers = {}
-
-# Loop through each file in the scalers directory
-for filename in os.listdir(scalers_dir):
-    if filename.startswith('scaler_') and filename.endswith('.pkl'):
-        # Extract ticker from filename (e.g., 'scaler_AAPL.pkl' -> 'AAPL')
-        ticker = filename.replace('scaler_', '').replace('.pkl', '')
-        # Load the scaler and store it in the dictionary
-        ticker_scalers[ticker] = joblib.load(os.path.join(scalers_dir, filename))
+df_scaler = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/scaler_df.pkl')
 
 # Replace '.' with '-' in ticker symbols, also add SPY as a benchmark
-_, pred_grouped_dfs, _, _, feature_cols = create_df()
+_, pred_grouped_dfs, _, _, feature_cols = create_df(data_len="1y")
 
 #take curr day, find most recent day in each df
 today = pd.Timestamp.now().strftime('%Y-%m-%d')
@@ -57,7 +48,7 @@ predictions = model.predict(np.array([x[1] for x in x_pred]))
 
 # Current predictions shape is (n_samples, 1)
 # Need to create a matrix with same number of columns as what scaler was fit on
-predictions_matrix = np.zeros((predictions.shape[0], 4))  # 4 columns for log_return_30d, rsi, encoded_ticker, vix
+predictions_matrix = np.zeros((predictions.shape[0], len(feature_cols) + 1))  # 4 columns for log_return_30d, rsi, encoded_ticker, vix
 predictions_matrix[:, 0] = predictions.ravel()  # Put predictions in first column (log_return_30d position)
 
 # Now inverse transform the whole matrix
