@@ -1,3 +1,11 @@
+import sys
+import os
+
+# Add the absolute path to the project root directory
+project_root = "/Users/aryanhazra/Downloads/Github Repos/trading_model"
+if project_root not in sys.path:
+    sys.path.append(project_root)
+
 from tqdm import tqdm
 import numpy as np
 from tensorflow import keras
@@ -5,8 +13,7 @@ from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Bidirectional, LSTM, Dense, BatchNormalization, LeakyReLU, Dropout, Conv1D, MaxPooling1D
 from tensorflow.keras.models import Sequential
 import joblib
-import os
-from models.model4.utils.create_df import create_df
+from src.models.model4.utils.create_df import create_df
 from multiprocessing import Pool, cpu_count
 
 
