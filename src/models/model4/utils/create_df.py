@@ -1,4 +1,4 @@
-from models.utils.sp_scraper import SPScraper
+from src.models.utils.sp_scraper import SPScraper
 import yfinance as yf
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -10,7 +10,7 @@ import pandas as pd
 import joblib
 import os
 from yfinance.exceptions import YFTickerMissingError
-
+from functools import lru_cache
 
 def process_ticker(ticker, data_len="max", train_data_till = None, test_data_from = None):
         try:
@@ -49,9 +49,80 @@ def process_ticker(ticker, data_len="max", train_data_till = None, test_data_fro
             ticker_data['log_return_30d'] = np.log(ticker_data['close'].shift(-21) / ticker_data['close'])
 
             # Technicals no z score
+            ticker_data['rsi'] = ta.RSI(ticker_data['close'], timeperiod=20)
+            pattern_functions = {
+                        'CDL2CROWS': ta.CDL2CROWS,
+                        'CDL3BLACKCROWS': ta.CDL3BLACKCROWS,
+                        'CDL3INSIDE': ta.CDL3INSIDE,
+                        'CDL3LINESTRIKE': ta.CDL3LINESTRIKE,
+                        'CDL3OUTSIDE': ta.CDL3OUTSIDE,
+                        'CDL3STARSINSOUTH': ta.CDL3STARSINSOUTH,
+                        'CDL3WHITESOLDIERS': ta.CDL3WHITESOLDIERS,
+                        'CDLABANDONEDBABY': ta.CDLABANDONEDBABY,
+                        'CDLADVANCEBLOCK': ta.CDLADVANCEBLOCK,
+                        'CDLBELTHOLD': ta.CDLBELTHOLD,
+                        'CDLBREAKAWAY': ta.CDLBREAKAWAY,
+                        'CDLCLOSINGMARUBOZU': ta.CDLCLOSINGMARUBOZU,
+                        'CDLCONCEALBABYSWALL': ta.CDLCONCEALBABYSWALL,
+                        'CDLCOUNTERATTACK': ta.CDLCOUNTERATTACK,
+                        'CDLDARKCLOUDCOVER': ta.CDLDARKCLOUDCOVER,
+                        'CDLDOJI': ta.CDLDOJI,
+                        'CDLDOJISTAR': ta.CDLDOJISTAR,
+                        'CDLDRAGONFLYDOJI': ta.CDLDRAGONFLYDOJI,
+                        'CDLENGULFING': ta.CDLENGULFING,
+                        'CDLEVENINGDOJISTAR': ta.CDLEVENINGDOJISTAR,
+                        'CDLEVENINGSTAR': ta.CDLEVENINGSTAR,
+                        'CDLGAPSIDESIDEWHITE': ta.CDLGAPSIDESIDEWHITE,
+                        'CDLGRAVESTONEDOJI': ta.CDLGRAVESTONEDOJI,
+                        'CDLHAMMER': ta.CDLHAMMER,
+                        'CDLHANGINGMAN': ta.CDLHANGINGMAN,
+                        'CDLHARAMI': ta.CDLHARAMI,
+                        'CDLHARAMICROSS': ta.CDLHARAMICROSS,
+                        'CDLHIGHWAVE': ta.CDLHIGHWAVE,
+                        'CDLHIKKAKE': ta.CDLHIKKAKE,
+                        'CDLHIKKAKEMOD': ta.CDLHIKKAKEMOD,
+                        'CDLHOMINGPIGEON': ta.CDLHOMINGPIGEON,
+                        'CDLIDENTICAL3CROWS': ta.CDLIDENTICAL3CROWS,
+                        'CDLINNECK': ta.CDLINNECK,
+                        'CDLINVERTEDHAMMER': ta.CDLINVERTEDHAMMER,
+                        'CDLKICKING': ta.CDLKICKING,
+                        'CDLKICKINGBYLENGTH': ta.CDLKICKINGBYLENGTH,
+                        'CDLLADDERBOTTOM': ta.CDLLADDERBOTTOM,
+                        'CDLLONGLEGGEDDOJI': ta.CDLLONGLEGGEDDOJI,
+                        'CDLLONGLINE': ta.CDLLONGLINE,
+                        'CDLMARUBOZU': ta.CDLMARUBOZU,
+                        'CDLMATCHINGLOW': ta.CDLMATCHINGLOW,
+                        'CDLMATHOLD': ta.CDLMATHOLD,
+                        'CDLMORNINGDOJISTAR': ta.CDLMORNINGDOJISTAR,
+                        'CDLMORNINGSTAR': ta.CDLMORNINGSTAR,
+                        'CDLONNECK': ta.CDLONNECK,
+                        'CDLPIERCING': ta.CDLPIERCING,
+                        'CDLRICKSHAWMAN': ta.CDLRICKSHAWMAN,
+                        'CDLRISEFALL3METHODS': ta.CDLRISEFALL3METHODS,
+                        'CDLSEPARATINGLINES': ta.CDLSEPARATINGLINES,
+                        'CDLSHOOTINGSTAR': ta.CDLSHOOTINGSTAR,
+                        'CDLSHORTLINE': ta.CDLSHORTLINE,
+                        'CDLSPINNINGTOP': ta.CDLSPINNINGTOP,
+                        'CDLSTALLEDPATTERN': ta.CDLSTALLEDPATTERN,
+                        'CDLSTICKSANDWICH': ta.CDLSTICKSANDWICH,
+                        'CDLTAKURI': ta.CDLTAKURI,
+                        'CDLTASUKIGAP': ta.CDLTASUKIGAP,
+                        'CDLTHRUSTING': ta.CDLTHRUSTING,
+                        'CDLTRISTAR': ta.CDLTRISTAR,
+                        'CDLUNIQUE3RIVER': ta.CDLUNIQUE3RIVER,
+                        'CDLUPSIDEGAP2CROWS': ta.CDLUPSIDEGAP2CROWS,
+                        'CDLXSIDEGAP3METHODS': ta.CDLXSIDEGAP3METHODS
+                    }
+
+            for pattern_name, pattern_function in pattern_functions.items():
+                ticker_data[pattern_name] = pattern_function(
+                    ticker_data['open'],
+                    ticker_data['high'],
+                    ticker_data['low'],
+                    ticker_data['close']
+                )
 
             # Technical z score
-            ticker_data['rsi'] = ta.RSI(ticker_data['close'], timeperiod=20)
             ticker_data['sma_10'] = ta.SMA(ticker_data['close'], timeperiod=10)
             ticker_data['sma_30'] = ta.SMA(ticker_data['close'], timeperiod=30)
             ticker_data['macd'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[0]
@@ -110,7 +181,7 @@ def process_ticker(ticker, data_len="max", train_data_till = None, test_data_fro
                     ticker_data.loc[ticker_data.index[i], 'z_score_macd_hist'] = (ticker_data['macd_hist'].iloc[i] - mean_macd_hist) / std_macd_hist
 
             feature_cols = ['log_return_30d', 'rsi', 'z_score_close', 'z_score_sma10', 
-                            'z_score_sma30', 'z_score_macd', 'z_score_macd_signal', 'z_score_macd_hist']
+                            'z_score_sma30', 'z_score_macd', 'z_score_macd_signal', 'z_score_macd_hist'] + list(pattern_functions.keys())
 
             # Make date a datetime, only year, month, day
             ticker_data['date'] = pd.to_datetime(ticker_data['date']).dt.date
@@ -166,12 +237,20 @@ def create_df(data_len="max", train_data_till = None, test_data_from = None):
     if train_data_till:
         df_scaler = StandardScaler()
         label_encoder = LabelEncoder()
-        data["encoded_ticker"] = label_encoder.fit_transform(data["ticker"])
+        
+        # Fit the label encoder on the sp_tickers list
+        sp_tickers = [ticker.replace(".", "-") for ticker in sorted(scraper.scrape_sp500_symbols().index)] + ["^GSPC"]
+        label_encoder.fit(sp_tickers)
+        
+        # Encode the tickers in the data based on the fitted label encoder
+        data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in sp_tickers else -1)
 
     else:
-        df_scaler = joblib.load('/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/scaler_df.pkl')
-        label_encoder = joblib.load('/Users/aryanhazra/Downloads/VSCode Repos/trading_model/src/models/model4/label_encoder.pkl')
-        data["encoded_ticker"] = label_encoder.transform(data["ticker"])
+        df_scaler = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/scaler_df.pkl')
+        label_encoder = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/label_encoder.pkl')
+        
+        # Transform the tickers in the data based on the loaded label encoder
+        data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in label_encoder.classes_ else -1)
 
     # Select and scale
     # Can't forget to scale the encoded ticker
