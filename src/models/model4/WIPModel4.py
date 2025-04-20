@@ -14,7 +14,6 @@ from tensorflow.keras.layers import Bidirectional, LSTM, Dense, BatchNormalizati
 from tensorflow.keras.models import Sequential
 import joblib
 from src.models.model4.utils.create_df import create_df
-from multiprocessing import Pool, cpu_count
 
 
 train_data_till = input(f"Enter train/test split year: " )

@@ -240,10 +240,9 @@ def create_df(data_len="max", train_data_till = None, test_data_from = None):
         
         # Fit the label encoder on the sp_tickers list
         sp_tickers = [ticker.replace(".", "-") for ticker in sorted(scraper.scrape_sp500_symbols().index)] + ["^GSPC"]
-        label_encoder.fit(sp_tickers)
         
         # Encode the tickers in the data based on the fitted label encoder
-        data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in sp_tickers else -1)
+        data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.fit_transform([x])[0] if x in sp_tickers else -1)
 
     else:
         df_scaler = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/scaler_df.pkl')
