@@ -25,11 +25,12 @@ from src.models.utils.sp_scraper import SPScraper
 # Initialize SPScraper
 scraper = SPScraper()
 
-model = keras.models.load_model('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/model4.keras')
-
 test_data_from = input(f"Enter train/test split year: " )
 # Convert empty string to None
 test_data_from = test_data_from if test_data_from.strip() else None
+
+model = keras.models.load_model(f'/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/{int(test_data_from) - 1}/model4.keras')
+
 
 
 # Replace '.' with '-' in ticker symbols, also add SPY as a benchmark

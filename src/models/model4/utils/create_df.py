@@ -11,211 +11,208 @@ import joblib
 import os
 from yfinance.exceptions import YFTickerMissingError
 from functools import lru_cache
+from multiprocessing import Pool, cpu_count, get_context
+import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
-def process_ticker(ticker, data_len="max", train_data_till = None, test_data_from = None):
-        try:
-            # Retry logic
-            while True:
-                try:
-                    ticker_data = yf.Ticker(ticker).history(period=data_len)
-                    break
-                except YFTickerMissingError as e:
-                    print("Trying again...")
-                    time.sleep(10)
-                except Exception as e:
-                    print("Trying again...")
-                    time.sleep(10)
+def process_ticker(ticker, ticker_data, train_data_till=None, test_data_from=None):
+    ticker_data = ticker_data.dropna(inplace=False)
 
-            if ticker_data.empty:
-                return None, None
+    # Ensuring is a copy of itself
+    ticker_data = ticker_data.copy()
 
-            # Process data
-            ticker_data.reset_index(inplace=True)
-            ticker_data.columns = ticker_data.columns.str.lower()
-            ticker_data['date'] = pd.to_datetime(ticker_data['date'])
+    # Process data
+    ticker_data.reset_index(inplace=True)
+    ticker_data.columns = ticker_data.columns.str.lower()
+    
+    # Make date a datetime, only year, month, day
+    ticker_data['date'] = pd.to_datetime(ticker_data['date'], errors='coerce')
 
-            if train_data_till:
-                # TEsting smth delete later, only training on data before 2015, then test from 2016 onwards
-                ticker_data = ticker_data[ticker_data['date'].dt.year <= int(train_data_till)]
+    
+    if train_data_till:
+        ticker_data = ticker_data[ticker_data['date'].dt.year <= int(train_data_till)]
 
-            if test_data_from:
-                ticker_data = ticker_data[ticker_data['date'].dt.year >= int(test_data_from)]
+    if test_data_from:
+        ticker_data = ticker_data[ticker_data['date'].dt.year >= int(test_data_from)]
 
-            if ticker_data.empty:
-                return None, None
-            
+    if ticker_data.empty:
+        return None, None
 
-            ticker_data['ticker'] = ticker
-            ticker_data['log_return_30d'] = np.log(ticker_data['close'].shift(-21) / ticker_data['close'])
+    ticker_data.loc[:,'ticker'] = ticker
+    ticker_data.loc[:,'log_return_30d'] = np.log(ticker_data['close'].shift(-21) / ticker_data['close'])
 
-            # Technicals no z score
-            ticker_data['rsi'] = ta.RSI(ticker_data['close'], timeperiod=20)
-            pattern_functions = {
-                        'CDL2CROWS': ta.CDL2CROWS,
-                        'CDL3BLACKCROWS': ta.CDL3BLACKCROWS,
-                        'CDL3INSIDE': ta.CDL3INSIDE,
-                        'CDL3LINESTRIKE': ta.CDL3LINESTRIKE,
-                        'CDL3OUTSIDE': ta.CDL3OUTSIDE,
-                        'CDL3STARSINSOUTH': ta.CDL3STARSINSOUTH,
-                        'CDL3WHITESOLDIERS': ta.CDL3WHITESOLDIERS,
-                        'CDLABANDONEDBABY': ta.CDLABANDONEDBABY,
-                        'CDLADVANCEBLOCK': ta.CDLADVANCEBLOCK,
-                        'CDLBELTHOLD': ta.CDLBELTHOLD,
-                        'CDLBREAKAWAY': ta.CDLBREAKAWAY,
-                        'CDLCLOSINGMARUBOZU': ta.CDLCLOSINGMARUBOZU,
-                        'CDLCONCEALBABYSWALL': ta.CDLCONCEALBABYSWALL,
-                        'CDLCOUNTERATTACK': ta.CDLCOUNTERATTACK,
-                        'CDLDARKCLOUDCOVER': ta.CDLDARKCLOUDCOVER,
-                        'CDLDOJI': ta.CDLDOJI,
-                        'CDLDOJISTAR': ta.CDLDOJISTAR,
-                        'CDLDRAGONFLYDOJI': ta.CDLDRAGONFLYDOJI,
-                        'CDLENGULFING': ta.CDLENGULFING,
-                        'CDLEVENINGDOJISTAR': ta.CDLEVENINGDOJISTAR,
-                        'CDLEVENINGSTAR': ta.CDLEVENINGSTAR,
-                        'CDLGAPSIDESIDEWHITE': ta.CDLGAPSIDESIDEWHITE,
-                        'CDLGRAVESTONEDOJI': ta.CDLGRAVESTONEDOJI,
-                        'CDLHAMMER': ta.CDLHAMMER,
-                        'CDLHANGINGMAN': ta.CDLHANGINGMAN,
-                        'CDLHARAMI': ta.CDLHARAMI,
-                        'CDLHARAMICROSS': ta.CDLHARAMICROSS,
-                        'CDLHIGHWAVE': ta.CDLHIGHWAVE,
-                        'CDLHIKKAKE': ta.CDLHIKKAKE,
-                        'CDLHIKKAKEMOD': ta.CDLHIKKAKEMOD,
-                        'CDLHOMINGPIGEON': ta.CDLHOMINGPIGEON,
-                        'CDLIDENTICAL3CROWS': ta.CDLIDENTICAL3CROWS,
-                        'CDLINNECK': ta.CDLINNECK,
-                        'CDLINVERTEDHAMMER': ta.CDLINVERTEDHAMMER,
-                        'CDLKICKING': ta.CDLKICKING,
-                        'CDLKICKINGBYLENGTH': ta.CDLKICKINGBYLENGTH,
-                        'CDLLADDERBOTTOM': ta.CDLLADDERBOTTOM,
-                        'CDLLONGLEGGEDDOJI': ta.CDLLONGLEGGEDDOJI,
-                        'CDLLONGLINE': ta.CDLLONGLINE,
-                        'CDLMARUBOZU': ta.CDLMARUBOZU,
-                        'CDLMATCHINGLOW': ta.CDLMATCHINGLOW,
-                        'CDLMATHOLD': ta.CDLMATHOLD,
-                        'CDLMORNINGDOJISTAR': ta.CDLMORNINGDOJISTAR,
-                        'CDLMORNINGSTAR': ta.CDLMORNINGSTAR,
-                        'CDLONNECK': ta.CDLONNECK,
-                        'CDLPIERCING': ta.CDLPIERCING,
-                        'CDLRICKSHAWMAN': ta.CDLRICKSHAWMAN,
-                        'CDLRISEFALL3METHODS': ta.CDLRISEFALL3METHODS,
-                        'CDLSEPARATINGLINES': ta.CDLSEPARATINGLINES,
-                        'CDLSHOOTINGSTAR': ta.CDLSHOOTINGSTAR,
-                        'CDLSHORTLINE': ta.CDLSHORTLINE,
-                        'CDLSPINNINGTOP': ta.CDLSPINNINGTOP,
-                        'CDLSTALLEDPATTERN': ta.CDLSTALLEDPATTERN,
-                        'CDLSTICKSANDWICH': ta.CDLSTICKSANDWICH,
-                        'CDLTAKURI': ta.CDLTAKURI,
-                        'CDLTASUKIGAP': ta.CDLTASUKIGAP,
-                        'CDLTHRUSTING': ta.CDLTHRUSTING,
-                        'CDLTRISTAR': ta.CDLTRISTAR,
-                        'CDLUNIQUE3RIVER': ta.CDLUNIQUE3RIVER,
-                        'CDLUPSIDEGAP2CROWS': ta.CDLUPSIDEGAP2CROWS,
-                        'CDLXSIDEGAP3METHODS': ta.CDLXSIDEGAP3METHODS
-                    }
+    # Technicals no z score
+    ticker_data.loc[:,'rsi'] = ta.RSI(ticker_data['close'], timeperiod=20)
+    pattern_functions = {
+                'CDL2CROWS': ta.CDL2CROWS,
+                'CDL3BLACKCROWS': ta.CDL3BLACKCROWS,
+                'CDL3INSIDE': ta.CDL3INSIDE,
+                'CDL3LINESTRIKE': ta.CDL3LINESTRIKE,
+                'CDL3OUTSIDE': ta.CDL3OUTSIDE,
+                'CDL3STARSINSOUTH': ta.CDL3STARSINSOUTH,
+                'CDL3WHITESOLDIERS': ta.CDL3WHITESOLDIERS,
+                'CDLABANDONEDBABY': ta.CDLABANDONEDBABY,
+                'CDLADVANCEBLOCK': ta.CDLADVANCEBLOCK,
+                'CDLBELTHOLD': ta.CDLBELTHOLD,
+                'CDLBREAKAWAY': ta.CDLBREAKAWAY,
+                'CDLCLOSINGMARUBOZU': ta.CDLCLOSINGMARUBOZU,
+                'CDLCONCEALBABYSWALL': ta.CDLCONCEALBABYSWALL,
+                'CDLCOUNTERATTACK': ta.CDLCOUNTERATTACK,
+                'CDLDARKCLOUDCOVER': ta.CDLDARKCLOUDCOVER,
+                'CDLDOJI': ta.CDLDOJI,
+                'CDLDOJISTAR': ta.CDLDOJISTAR,
+                'CDLDRAGONFLYDOJI': ta.CDLDRAGONFLYDOJI,
+                'CDLENGULFING': ta.CDLENGULFING,
+                'CDLEVENINGDOJISTAR': ta.CDLEVENINGDOJISTAR,
+                'CDLEVENINGSTAR': ta.CDLEVENINGSTAR,
+                'CDLGAPSIDESIDEWHITE': ta.CDLGAPSIDESIDEWHITE,
+                'CDLGRAVESTONEDOJI': ta.CDLGRAVESTONEDOJI,
+                'CDLHAMMER': ta.CDLHAMMER,
+                'CDLHANGINGMAN': ta.CDLHANGINGMAN,
+                'CDLHARAMI': ta.CDLHARAMI,
+                'CDLHARAMICROSS': ta.CDLHARAMICROSS,
+                'CDLHIGHWAVE': ta.CDLHIGHWAVE,
+                'CDLHIKKAKE': ta.CDLHIKKAKE,
+                'CDLHIKKAKEMOD': ta.CDLHIKKAKEMOD,
+                'CDLHOMINGPIGEON': ta.CDLHOMINGPIGEON,
+                'CDLIDENTICAL3CROWS': ta.CDLIDENTICAL3CROWS,
+                'CDLINNECK': ta.CDLINNECK,
+                'CDLINVERTEDHAMMER': ta.CDLINVERTEDHAMMER,
+                'CDLKICKING': ta.CDLKICKING,
+                'CDLKICKINGBYLENGTH': ta.CDLKICKINGBYLENGTH,
+                'CDLLADDERBOTTOM': ta.CDLLADDERBOTTOM,
+                'CDLLONGLEGGEDDOJI': ta.CDLLONGLEGGEDDOJI,
+                'CDLLONGLINE': ta.CDLLONGLINE,
+                'CDLMARUBOZU': ta.CDLMARUBOZU,
+                'CDLMATCHINGLOW': ta.CDLMATCHINGLOW,
+                'CDLMATHOLD': ta.CDLMATHOLD,
+                'CDLMORNINGDOJISTAR': ta.CDLMORNINGDOJISTAR,
+                'CDLMORNINGSTAR': ta.CDLMORNINGSTAR,
+                'CDLONNECK': ta.CDLONNECK,
+                'CDLPIERCING': ta.CDLPIERCING,
+                'CDLRICKSHAWMAN': ta.CDLRICKSHAWMAN,
+                'CDLRISEFALL3METHODS': ta.CDLRISEFALL3METHODS,
+                'CDLSEPARATINGLINES': ta.CDLSEPARATINGLINES,
+                'CDLSHOOTINGSTAR': ta.CDLSHOOTINGSTAR,
+                'CDLSHORTLINE': ta.CDLSHORTLINE,
+                'CDLSPINNINGTOP': ta.CDLSPINNINGTOP,
+                'CDLSTALLEDPATTERN': ta.CDLSTALLEDPATTERN,
+                'CDLSTICKSANDWICH': ta.CDLSTICKSANDWICH,
+                'CDLTAKURI': ta.CDLTAKURI,
+                'CDLTASUKIGAP': ta.CDLTASUKIGAP,
+                'CDLTHRUSTING': ta.CDLTHRUSTING,
+                'CDLTRISTAR': ta.CDLTRISTAR,
+                'CDLUNIQUE3RIVER': ta.CDLUNIQUE3RIVER,
+                'CDLUPSIDEGAP2CROWS': ta.CDLUPSIDEGAP2CROWS,
+                'CDLXSIDEGAP3METHODS': ta.CDLXSIDEGAP3METHODS
+            }
 
-            for pattern_name, pattern_function in pattern_functions.items():
-                ticker_data[pattern_name] = pattern_function(
-                    ticker_data['open'],
-                    ticker_data['high'],
-                    ticker_data['low'],
-                    ticker_data['close']
-                )
+    for pattern_name, pattern_function in pattern_functions.items():
+        ticker_data[pattern_name] = pattern_function(
+            ticker_data['open'],
+            ticker_data['high'],
+            ticker_data['low'],
+            ticker_data['close']
+        )
 
-            # Technical z score
-            ticker_data['sma_10'] = ta.SMA(ticker_data['close'], timeperiod=10)
-            ticker_data['sma_30'] = ta.SMA(ticker_data['close'], timeperiod=30)
-            ticker_data['macd'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[0]
-            ticker_data['macd_signal'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[1]
-            ticker_data['macd_hist'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[2]
-            
-            # Z score vals
-            # Calculate z-score for the last 60 days
-            ticker_data['z_score_close'] = np.nan
-            ticker_data['z_score_sma10'] = np.nan
-            ticker_data['z_score_sma30'] = np.nan
-            ticker_data['z_score_macd'] = np.nan
-            ticker_data['z_score_macd_signal'] = np.nan
-            ticker_data['z_score_macd_hist'] = np.nan
-            for i in range(60, len(ticker_data)):
-                # Z-score for close price
-                window = ticker_data['close'].iloc[i-60:i]
-                mean = window.mean()
-                std = window.std()
-                if std != 0:  # Avoid division by zero
-                    ticker_data.loc[ticker_data.index[i], 'z_score_close'] = (ticker_data['close'].iloc[i] - mean) / std
-                
-                # Z-score for SMA10
-                window_sma10 = ticker_data['sma_10'].iloc[i-60:i]
-                mean_sma10 = window_sma10.mean()
-                std_sma10 = window_sma10.std()
-                if std_sma10 != 0:
-                    ticker_data.loc[ticker_data.index[i], 'z_score_sma10'] = (ticker_data['sma_10'].iloc[i] - mean_sma10) / std_sma10
-                
-                # Z-score for SMA30
-                window_sma30 = ticker_data['sma_30'].iloc[i-60:i]
-                mean_sma30 = window_sma30.mean()
-                std_sma30 = window_sma30.std()
-                if std_sma30 != 0:
-                    ticker_data.loc[ticker_data.index[i], 'z_score_sma30'] = (ticker_data['sma_30'].iloc[i] - mean_sma30) / std_sma30
-
-                # Z-score for MACD
-                window_macd = ticker_data['macd'].iloc[i-60:i]
-                mean_macd = window_macd.mean()
-                std_macd = window_macd.std()
-                if std_macd != 0:
-                    ticker_data.loc[ticker_data.index[i], 'z_score_macd'] = (ticker_data['macd'].iloc[i] - mean_macd) / std_macd
-
-                # Z-score for MACD Signal
-                window_macd_signal = ticker_data['macd_signal'].iloc[i-60:i]
-                mean_macd_signal = window_macd_signal.mean()
-                std_macd_signal = window_macd_signal.std()
-                if std_macd_signal != 0:
-                    ticker_data.loc[ticker_data.index[i], 'z_score_macd_signal'] = (ticker_data['macd_signal'].iloc[i] - mean_macd_signal) / std_macd_signal
-
-                # Z-score for MACD Histogram
-                window_macd_hist = ticker_data['macd_hist'].iloc[i-60:i]
-                mean_macd_hist = window_macd_hist.mean()
-                std_macd_hist = window_macd_hist.std()
-                if std_macd_hist != 0:
-                    ticker_data.loc[ticker_data.index[i], 'z_score_macd_hist'] = (ticker_data['macd_hist'].iloc[i] - mean_macd_hist) / std_macd_hist
-
-            feature_cols = ['log_return_30d', 'rsi', 'z_score_close', 'z_score_sma10', 
-                            'z_score_sma30', 'z_score_macd', 'z_score_macd_signal', 'z_score_macd_hist'] + list(pattern_functions.keys())
-
-            # Make date a datetime, only year, month, day
-            ticker_data['date'] = pd.to_datetime(ticker_data['date']).dt.date
-            
-            
-            
-            return ticker_data, feature_cols
+    # Technical z score
+    ticker_data['sma_10'] = ta.SMA(ticker_data['close'], timeperiod=10)
+    ticker_data['sma_30'] = ta.SMA(ticker_data['close'], timeperiod=30)
+    ticker_data['macd'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[0]
+    ticker_data['macd_signal'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[1]
+    ticker_data['macd_hist'] = ta.MACD(ticker_data['close'], fastperiod=12, slowperiod=26, signalperiod=9)[2]
+    
+    # Z score vals
+    # Calculate z-score for the last 60 days
+    ticker_data['z_score_close'] = np.nan
+    ticker_data['z_score_sma10'] = np.nan
+    ticker_data['z_score_sma30'] = np.nan
+    ticker_data['z_score_macd'] = np.nan
+    ticker_data['z_score_macd_signal'] = np.nan
+    ticker_data['z_score_macd_hist'] = np.nan
+    for i in range(60, len(ticker_data)):
+        # Z-score for close price
+        window = ticker_data['close'].iloc[i-60:i]
+        mean = window.mean()
+        std = window.std()
+        if std != 0:  # Avoid division by zero
+            ticker_data.loc[ticker_data.index[i], 'z_score_close'] = (ticker_data['close'].iloc[i] - mean) / std
         
-        except Exception as e:
-            print(f"Failed to process {ticker}: {e}")
-            return None, None
+        # Z-score for SMA10
+        window_sma10 = ticker_data['sma_10'].iloc[i-60:i]
+        mean_sma10 = window_sma10.mean()
+        std_sma10 = window_sma10.std()
+        if std_sma10 != 0:
+            ticker_data.loc[ticker_data.index[i], 'z_score_sma10'] = (ticker_data['sma_10'].iloc[i] - mean_sma10) / std_sma10
+        
+        # Z-score for SMA30
+        window_sma30 = ticker_data['sma_30'].iloc[i-60:i]
+        mean_sma30 = window_sma30.mean()
+        std_sma30 = window_sma30.std()
+        if std_sma30 != 0:
+            ticker_data.loc[ticker_data.index[i], 'z_score_sma30'] = (ticker_data['sma_30'].iloc[i] - mean_sma30) / std_sma30
 
+        # Z-score for MACD
+        window_macd = ticker_data['macd'].iloc[i-60:i]
+        mean_macd = window_macd.mean()
+        std_macd = window_macd.std()
+        if std_macd != 0:
+            ticker_data.loc[ticker_data.index[i], 'z_score_macd'] = (ticker_data['macd'].iloc[i] - mean_macd) / std_macd
 
-def create_df(data_len="max", train_data_till = None, test_data_from = None):
+        # Z-score for MACD Signal
+        window_macd_signal = ticker_data['macd_signal'].iloc[i-60:i]
+        mean_macd_signal = window_macd_signal.mean()
+        std_macd_signal = window_macd_signal.std()
+        if std_macd_signal != 0:
+            ticker_data.loc[ticker_data.index[i], 'z_score_macd_signal'] = (ticker_data['macd_signal'].iloc[i] - mean_macd_signal) / std_macd_signal
+
+        # Z-score for MACD Histogram
+        window_macd_hist = ticker_data['macd_hist'].iloc[i-60:i]
+        mean_macd_hist = window_macd_hist.mean()
+        std_macd_hist = window_macd_hist.std()
+        if std_macd_hist != 0:
+            ticker_data.loc[ticker_data.index[i], 'z_score_macd_hist'] = (ticker_data['macd_hist'].iloc[i] - mean_macd_hist) / std_macd_hist
+
+    feature_cols = ['log_return_30d', 'rsi', 'z_score_close', 'z_score_sma10', 
+                    'z_score_sma30', 'z_score_macd', 'z_score_macd_signal', 'z_score_macd_hist'] + list(pattern_functions.keys())
+    
+    return ticker_data, feature_cols
+
+# Define a wrapper function for multiprocessing
+def process_ticker_wrapper(args):
+    return process_ticker(*args)
+
+def create_df(data_len="max", train_data_till=None, test_data_from=None):
     # Replace '.' with '-' in ticker symbols, also add SPY as a benchmark
     scraper = SPScraper()
 
     sp_tickers = [ticker.replace(".", "-") for ticker in sorted(scraper.scrape_sp500_symbols().index)] + ["^GSPC"]
     data_frames = []
 
-    cpu_count = os.cpu_count() or 4  # Fallback if CPU count cannot be determined
-    max_workers = min(cpu_count * 4, 60)  # Cap at 60 to avoid rate limiting
+    # Download data
+    data = yf.download(sp_tickers, period=data_len)
 
+    # Split the DataFrame by ticker with progress tracking
+    ticker_dfs = {}
+    tickers = data.columns.levels[1]
+    for ticker in tqdm(tickers, desc="Splitting data by ticker", unit="ticker"):
+        ticker_dfs[ticker] = data.xs(ticker, axis=1, level=1)
 
-    # Use multithreading for I/O-bound operations like data download
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(process_ticker, ticker, data_len, train_data_till, test_data_from): ticker for ticker in sp_tickers}
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Downloading data", unit="ticker"):
-            ticker_data, feature_cols = future.result()
-            if ticker_data is not None:
-                data_frames.append(ticker_data)
+    # Use multiprocessing.Pool with "fork" context
+    args = [(ticker, ticker_df, train_data_till, test_data_from) for ticker, ticker_df in ticker_dfs.items()]
+    with get_context("fork").Pool(processes=cpu_count()) as pool:
+        results = list(tqdm(pool.imap_unordered(process_ticker_wrapper, args), total=len(args), desc="Adding features", unit="ticker", leave=True))
+        for result in results:
+            try:
+                ticker_data, feature_cols = result
+                if ticker_data is not None:
+                    data_frames.append(ticker_data)
+            except Exception as e:
+                print(f"Error processing ticker: {e}")
 
     # Combine all dataframes
     data = pd.concat(data_frames, ignore_index=True)
+    del data_frames
     # Get ^VIX and join it to data based on date
     vix = yf.Ticker("^VIX").history(period=data_len)
     # Make "Date" a column
@@ -227,6 +224,7 @@ def create_df(data_len="max", train_data_till = None, test_data_from = None):
     # Refine df to only include date and vix
     vix = vix[['date', 'vix']]
     # Make date a datetime, only year, month, day
+    data['date'] = pd.to_datetime(data['date']).dt.date  # Ensure 'date' in data is of type datetime.date
     vix['date'] = pd.to_datetime(vix['date']).dt.date
 
     # Merge VIX data with main dataframe based on date
@@ -245,9 +243,13 @@ def create_df(data_len="max", train_data_till = None, test_data_from = None):
         data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.fit_transform([x])[0] if x in sp_tickers else -1)
 
     else:
-        df_scaler = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/scaler_df.pkl')
-        label_encoder = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/label_encoder.pkl')
-        
+        try:
+            df_scaler = joblib.load(f'/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/{int(test_data_from) - 1}/scaler_df.pkl')
+            label_encoder = joblib.load(f'/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/{int(test_data_from) - 1}/label_encoder.pkl')
+        except:
+            fallback_scalers = (f'Scaler or label encoder for year {int(test_data_from) - 1} not found. Please select a training year scaler to use.')
+            df_scaler = joblib.load(f'/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/{fallback_scalers}/scaler_df.pkl')
+            label_encoder = joblib.load(f'/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/{fallback_scalers}/label_encoder.pkl')
         # Transform the tickers in the data based on the loaded label encoder
         data["encoded_ticker"] = data["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in label_encoder.classes_ else -1)
 
