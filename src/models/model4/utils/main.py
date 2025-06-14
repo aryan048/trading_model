@@ -26,11 +26,8 @@ scraper = SPScraper()
 
 model = keras.models.load_model('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/model4.keras')
 
-# Load all scalers
-df_scaler = joblib.load('/Users/aryanhazra/Downloads/Github Repos/trading_model/src/models/model4/scaler_df.pkl')
-
 # Replace '.' with '-' in ticker symbols, also add SPY as a benchmark
-_, pred_grouped_dfs, _, _, feature_cols = create_df(data_len="1y")
+_, pred_grouped_dfs, df_scaler, _, feature_cols = create_df(data_len="1y")
 
 #take curr day, find most recent day in each df
 today = pd.Timestamp.now().strftime('%Y-%m-%d')
