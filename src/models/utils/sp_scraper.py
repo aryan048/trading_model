@@ -82,16 +82,19 @@ class SPScraper:
         constituents_df, changes_df, historical_df = self.scrape_sp500_symbols()
         
         # Convert input date to datetime if it's a string
-        if isinstance(date, str):
-            date = pd.to_datetime(date)
+        date = pd.to_datetime(date).normalize()
+
             
         # Start with current constituents (only tickers)
         current_constituents = set(constituents_df['ticker_added'])
         
         # Walk through historical data in reverse chronological order (newest to oldest)
         for idx, row in historical_df.sort_index(ascending=False).iterrows():
+            idx_normalized = pd.to_datetime(idx).normalize()
+
+
             # If we've gone past our target date, stop processing
-            if idx <= date:
+            if idx_normalized <= date:
                 break
                 
             # When going backwards:
@@ -112,4 +115,4 @@ class SPScraper:
 
 if __name__ == "__main__":
     scraper = SPScraper()
-    print(scraper.build_table('2020-06-08'))
+    print(scraper.build_table('1995-03-10'))
