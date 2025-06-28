@@ -1,19 +1,19 @@
 import sys
+import os
+import requests
 
 # Add the absolute path to the project root directory
-project_root = "/Users/aryanhazra/Downloads/Github Repos/trading_model"
+project_root = "/Users/aryanhazra/Repos/trading_model"
 if project_root not in sys.path:
     sys.path.append(project_root)
 
 from src.models.utils.sp_scraper import SPScraper
-import yfinance as yf
 from tqdm import tqdm
 from multiprocessing import get_context, cpu_count
 import pandas as pd
 from src.models.model5.TalibIndicators import TalibIndicators
 import numpy as np
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-import os
 from tensorflow import keras
 from tensorflow.keras import regularizers
 from tensorflow.keras.layers import Bidirectional, LSTM, Dense, BatchNormalization, LeakyReLU, Dropout, Conv1D, MaxPooling1D
@@ -21,6 +21,9 @@ from tensorflow.keras.models import Sequential
 from copy import deepcopy
 import tensorflow as tf
 import gc
+import json
+import yfinance as yf
+
 
 
 # Suppress TensorFlow logs
@@ -29,9 +32,9 @@ tf.get_logger().setLevel('ERROR')         # Suppress TensorFlow INFO logs
 
 scraper = SPScraper()
 constituents_df, changes_df, historical_df = scraper.scrape_sp500_symbols()
-all_tickers = historical_df['ticker_added'].dropna().tolist() + historical_df['ticker_removed'].dropna().tolist()
+all_tickers = list(set(historical_df['ticker_added'].dropna().tolist() + historical_df['ticker_removed'].dropna().tolist() + constituents_df['ticker_added'].dropna().tolist() + ['SPY']))
 
-sp_tickers = [ticker.replace(".", "-") for ticker in set(all_tickers)] + ["^GSPC"]
+#sp_tickers = [ticker.replace(".", "-") for ticker in all_tickers] + ["SPY"]
 
 win_count  = 0
 lose_count = 0
@@ -39,25 +42,113 @@ wins = []
 losses = []
 returns = 1
 spy_returns = 1
+bias = 1
 
 
 
 temp_data_dir = "src/models/model5/temp_data"
 os.makedirs(temp_data_dir, exist_ok=True)
 
+def download_ticker_data(ticker):
+    """Download data for a single ticker"""
+    try:
+        ticker = ticker.replace(".", "-")
+        url = f"https://eodhd.com/api/eod/{ticker}.US?period=d&api_token=680d28928681c6.96535696&fmt=json"
+        response = requests.get(url)
+        response.raise_for_status()
+        data = response.json()
+        return {ticker: pd.DataFrame(data)}
+    except Exception as e:
+        print(f"Error downloading data for {ticker}: {e}")
+        return {ticker: pd.DataFrame()}
+
+def download_changes_ticker_data(args):
+    """Download data for a single ticker from changes data"""
+    ticker, blocked_tickers, delisted_tickers = args
+    try:
+        if ticker in blocked_tickers:
+            return {ticker: pd.DataFrame()}
+
+        if ticker in delisted_tickers.keys():
+            old_ticker = delisted_tickers[ticker]['ticker']
+            response = requests.get(f"https://eodhd.com/api/eod/{old_ticker}.US?period=d&api_token=680d28928681c6.96535696&fmt=json")
+            if response.status_code == 200:
+                data = response.json()
+                return {ticker: pd.DataFrame(data)}
+            else:
+                return {ticker: pd.DataFrame()}
+        else:
+            response = requests.get(f"https://eodhd.com/api/eod/{ticker}.US?period=d&api_token=680d28928681c6.96535696&fmt=json")
+            if response.status_code == 200:
+                data = response.json()
+                return {ticker: pd.DataFrame(data)}
+            else:
+                return {ticker: pd.DataFrame()}
+    except Exception as e:
+        print(f"Error downloading data for {ticker}: {e}")
+        return {ticker: pd.DataFrame()}
+
 def download_data() -> dict[str, pd.DataFrame]:
-    """Download data for all tickers in the S&P 500 and split them up by ticker"""
     dataframes = {}
 
-    # Download data
-    data = yf.download(sp_tickers, period="max")
+    download_tickers = constituents_df['ticker_added'].tolist()
+    download_tickers.append('SPY')
+    # Use multiprocessing to download data in parallel
+    with get_context('spawn').Pool(processes=cpu_count()) as pool:
+        results = list(tqdm(
+            pool.imap(download_ticker_data, download_tickers),
+            total=len(download_tickers),
+            desc="Downloading constituent data"
+        ))
 
-    tickers = data.columns.levels[1]
-    for ticker in tqdm(tickers, desc="Splitting data by ticker", unit="ticker"):
-        dataframes[ticker] = data.xs(ticker, axis=1, level=1)
+    for result in results:
+        for ticker, df in result.items():
+            dataframes[ticker] = df
+    
+    blocked_tickers = ["DFS", "DISH", "SIVB", "NLSN", "DISCA", "PBCT", "KSU", "ETFC", "JWN", "TSS", "SRCL", "TWX", "BCR", "MNK", "SWN", "LM", "DO", "ESV", "GMCR", "JOY", "WIN", "BEAM", "WPX", "JCP", "NYX", "SAI", "DF", "FII", "RRD", "ANR", "KFT", "LXK", "WFR", "MDP", "JNY", "WB", "FRE", "CFC", "ABK", "QTRN", "LDW", "AN", "SUN", "USL", "HNG"]
 
+    with open("selected_stocks_with_dates.json", "r") as f:
+        delisted_tickers = json.load(f)
+
+    # Collect all tickers from changes
+    all_change_tickers = []
+    for tickers in [changes_df['ticker_added'], changes_df['ticker_removed']]:
+        all_change_tickers.extend(tickers.dropna().tolist())
+    
+    # Prepare arguments for multiprocessing
+    args_list = [(ticker, blocked_tickers, delisted_tickers) for ticker in list(set(all_change_tickers))]
+    
+    # Use multiprocessing to download data in parallel
+    with get_context('spawn').Pool(processes=cpu_count()) as pool:
+        results = list(tqdm(
+            pool.imap(download_changes_ticker_data, args_list),
+            total=len(args_list),
+            desc="Downloading changes data"
+        ))
+    
+    # Process results and handle delisted ticker merging
+    for result in results:
+        for ticker, df in result.items():
+            if not df.empty:
+                if ticker in dataframes.keys():
+                    # Merge the old ticker data with the new ticker data
+                    old_data = dataframes.get(ticker, pd.DataFrame())
+                    new_data = df
+                    
+                    # Combine the dataframes, keeping all data from both
+                    combined_data = pd.concat([old_data, new_data], ignore_index=True)
+                    
+                    # Remove duplicates based on date (assuming there's a date column)
+                    if not combined_data.empty and 'date' in combined_data.columns:
+                        combined_data = combined_data.drop_duplicates(subset=['date'], keep='first')
+                        combined_data = combined_data.sort_values('date')
+                    
+                    dataframes[ticker] = combined_data
+            else:
+                dataframes[ticker] = df
+        
     return dataframes
-
+    
 def calculate_z_score():
     pass
 
@@ -68,7 +159,7 @@ def add_features(ticker, df):
 
     # Add ticker and return columns
     df['ticker'] = ticker
-    df['return_21d'] = df['close'].pct_change(periods=21, fill_method = None).shift(-21)
+    df['return_21d'] = df['adjusted_close'].pct_change(periods=21, fill_method = None).shift(-21)
 
     # Add TA-Lib indicators
     Talib = TalibIndicators(df)
@@ -87,7 +178,7 @@ def multithread_add_features(dataframes : dict[str, pd.DataFrame]):
     full_df = pd.DataFrame()
 
     # Use multiprocessing.Pool with "fork" context
-    args = [(ticker, ticker_df) for ticker, ticker_df in dataframes.items()]
+    args = [(ticker, ticker_df) for ticker, ticker_df in dataframes.items() if not ticker_df.empty]
 
     with get_context("fork").Pool(processes=cpu_count()) as pool:
         results = list(tqdm(pool.imap_unordered(multithread_wrapper, args), total=len(args), desc="Creating Multithread Processes", unit="ticker", leave=True))
@@ -123,19 +214,44 @@ def add_vix(full_df):
 
     return data
 
-def drop_data(dataframes, drop_date, pred_date = None):
+def drop_data(dataframes, drop_date, pred_date = None, constituents_df = None):
     """Drops data after specified date (whatever index spy data is on in the loop) and before S&P addition"""
     pred_data = pd.DataFrame()
+    dropped_dataframes = {}
+
+    print(f"Expected: {len(constituents_df)}")
+    skipped_tickers = []
+    empty_tickers = []
+
     for ticker, df in tqdm(dataframes.items(), total=len(dataframes), desc="Dropping data", unit="ticker"):
-        # Get test data NOT Y TRAIN
-        dataframes[ticker].drop(df[df['date'] <= sp_addition_dates[ticker]].index, inplace=True)
-        if pred_date:
+        if ticker in constituents_df['ticker'].values:
             pred_idx = df.index[df['date'] == pred_date]
             if not pred_idx.empty:
                 pred_data = pd.concat([pred_data, df.loc[df['date'] == pred_date]], ignore_index=True)
-        dataframes[ticker].drop(df[df['date'] > drop_date].index, inplace=True)
-    dropped_dataframes = {ticker: df for ticker, df in dataframes.items() if not df.empty}
+                dataframes[ticker].drop(df[df['date'] > drop_date].index, inplace=True)
+                if not df.empty:
+                    dropped_dataframes[ticker] = df
+                else:
+                    empty_tickers.append(ticker)                 
+        else:
+            skipped_tickers.append(ticker)
+
+    print(f"After drop: {len(dropped_dataframes)}")
     return dropped_dataframes, pred_data
+
+
+# def drop_data(dataframes, drop_date, pred_date = None):
+#     """Drops data after specified date (whatever index spy data is on in the loop) and before S&P addition"""
+#     pred_data = pd.DataFrame()
+#     for ticker, df in tqdm(dataframes.items(), total=len(dataframes), desc="Dropping data", unit="ticker"):
+#         # Get test data NOT Y TRAIN
+#         dataframes[ticker].drop(df[df['date'] <= sp_addition_dates[ticker]].index, inplace=True)
+#         if pred_date:
+#             pred_idx = df.index[df['date'] == pred_date]
+#             if not pred_idx.empty:
+#                 pred_data = pd.concat([pred_data, df.loc[df['date'] == pred_date]], ignore_index=True)
+#         dataframes[ticker].drop(df[df['date'] > drop_date].index, inplace=True)
+#     dropped_dataframes = {ticker: df for ticker, df in dataframes.items() if not df.empty}
 
 def z_score_data(dataframes, features):
     """Z-score the dataframes"""
@@ -161,8 +277,8 @@ def scale_data(dataframes, features, df_scaler=None, target_scaler=None):
 
     df.dropna(inplace=True)
     
-    label_encoder.fit(sp_tickers)
-    df["encoded_ticker"] = df["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in sp_tickers else -1)
+    label_encoder.fit(all_tickers)
+    df["encoded_ticker"] = df["ticker"].map(lambda x: label_encoder.transform([x])[0] if x in all_tickers else -1)
 
     # Add non talib features
     features.append("encoded_ticker")
@@ -246,18 +362,24 @@ def create_pred_sliding_window(scaled_dataframe, scaled_features):
 
 def train_test_loop(spy_df, dataframes, features):
 
-    for i in range(67, len(spy_df) - 21, 21):
+    for i in range(67, len(spy_df) - 21, 1):
         # Clear any old sliding-window files so we only train on current window
         for f in os.listdir(temp_data_dir):
             os.remove(os.path.join(temp_data_dir, f))
 
         #Drop date is y train
+        print(f"Training on date: {spy_df.iloc[i]['date']}")
         drop_date = spy_df.iloc[i]['date']
         pred_date = spy_df.iloc[i + 21]['date']
         spy_pred = spy_df.iloc[i + 21]['return_21d']
 
+        #create curr consituents table on drop_date
+        constituents_df = SPScraper().build_table(drop_date)
+
+
         # Passing a copy of the df so the original df is intact
-        dropped_dataframes, pred_df = drop_data(deepcopy(dataframes), drop_date, pred_date)
+        print(f"Before drop: {len(dataframes)}")
+        dropped_dataframes, pred_df = drop_data(deepcopy(dataframes), drop_date, pred_date, constituents_df)
 
         z_score_dataframes, z_score_features = z_score_data(dropped_dataframes, features)
 
@@ -276,7 +398,7 @@ def train_test_loop(spy_df, dataframes, features):
         pred_drop_date = spy_df.iloc[i + 20]['date']
 
         # Dropping everything including the 21st day (the day we are predicting) so it doesnt get scaled
-        dropped_dataframes, _ = drop_data(deepcopy(dataframes), pred_drop_date)
+        dropped_dataframes, _ = drop_data(dataframes, pred_drop_date, constituents_df=constituents_df)
 
         z_score_dataframes, z_score_features = z_score_data(dropped_dataframes, features)
 
@@ -290,12 +412,15 @@ def train_test_loop(spy_df, dataframes, features):
 
         os.system('cls' if os.name == 'nt' else 'clear')    
 
-        # top_10_predictions = dict(sorted(predictions.items(), 
-        #                                     key=lambda x: x[1], 
-        #                                     reverse=True)[:10])
         top_10_predictions = dict(sorted(predictions.items(), 
                                             key=lambda x: x[1], 
+                                            reverse=True)[:10])
+
+        all_snp_predictions = dict(sorted(predictions.items(), 
+                                            key=lambda x: x[1], 
                                             reverse=True))
+        local_bias = avg_real_return = np.mean([pred_df[pred_df['ticker'] == ticker]['return_21d'].values[0] for ticker in all_snp_predictions.keys()])
+
         
         avg_predicted_return = np.mean([pred for _, pred in top_10_predictions.items()])
         avg_real_return = np.mean([pred_df[pred_df['ticker'] == ticker]['return_21d'].values[0] for ticker in top_10_predictions.keys()])
@@ -311,7 +436,7 @@ def train_test_loop(spy_df, dataframes, features):
         print("\nAverage Actual Return for Top 10: {:.2f}%".format(avg_real_return*100))
         print(f"SPY Return: {spy_pred*100:.2f}%")
 
-        global win_count, lose_count, wins, losses, returns
+        global win_count, lose_count, wins, losses, returns, bias
 
         if avg_real_return > spy_pred:
             win_count += 1
@@ -323,6 +448,8 @@ def train_test_loop(spy_df, dataframes, features):
         global returns, spy_returns
         returns *= (1+avg_real_return)
         spy_returns *= (1+spy_pred)
+        bias *= (1+local_bias)
+
 
 
         print(f"Win Count: {win_count}, Lose Count: {lose_count}")
@@ -330,6 +457,7 @@ def train_test_loop(spy_df, dataframes, features):
         print(f"Average loss by {np.mean(losses):.2f}")
         print(f"Total return {((returns - 1) * 100):.2f}%")
         print(f"Spy returns {((spy_returns-1) * 100):.2f}%")
+        print(f"Bias {((bias-1) * 100):.2f}%")
 
 
 def create_model(scaled_features):
@@ -403,7 +531,7 @@ def generator():
     return train_gen, val_gen
 
 def train_model(model):
-    early_stopping = keras.callbacks.EarlyStopping(monitor='val_loss', 
+    early_stopping = keras.callbacks.EarlyStopping(monitor='root_mean_squared_error', 
                                             patience=5, 
                                             restore_best_weights=True)
     
@@ -426,6 +554,7 @@ def predict(x_pred, model, df_scaler, target_scaler, features):
 
     return predictions
 
+
 if __name__ == "__main__":
     dataframes = download_data()
 
@@ -436,8 +565,8 @@ if __name__ == "__main__":
     dataframes = full_df.groupby('ticker')
     dataframes = {ticker: df.sort_values(by='date').reset_index(drop=True) for ticker, df in dataframes}
 
-    spy_df = dataframes['^GSPC']
+    spy_df = dataframes['SPY']
 
-    del dataframes['^GSPC']
+    del dataframes['SPY']
 
     train_test_loop(spy_df, dataframes, features)
