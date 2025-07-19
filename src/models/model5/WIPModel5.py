@@ -1,7 +1,8 @@
 import sys
+import os
 
-# Add the absolute path to the project root directory
-project_root = "/Users/aryanhazra/Downloads/Github Repos/trading_model"
+# Add the project root directory to Python path
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
@@ -21,17 +22,19 @@ from tensorflow.keras.models import Sequential
 from copy import deepcopy
 import tensorflow as tf
 import gc
+import matplotlib.pyplot as plt
 
 
 # Suppress TensorFlow logs
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress INFO and WARNING logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress INFO and WARNING logslogs
 tf.get_logger().setLevel('ERROR')         # Suppress TensorFlow INFO logs
 
 scraper = SPScraper()
 constituents_df, changes_df, historical_df = scraper.scrape_sp500_symbols()
-all_tickers = historical_df['ticker_added'].dropna().tolist() + historical_df['ticker_removed'].dropna().tolist()
+sp_addition_dates = {ticker: date for ticker, date in zip(constituents_df['ticker_added'].dropna().tolist(), constituents_df.index.dropna().tolist())}
 
-sp_tickers = [ticker.replace(".", "-") for ticker in set(all_tickers)] + ["^GSPC"]
+sp_tickers = [ticker.replace(".", "-") for ticker in constituents_df['ticker_added'].dropna().tolist()] + ["^GSPC"]
+
 
 win_count  = 0
 lose_count = 0
@@ -39,6 +42,9 @@ wins = []
 losses = []
 returns = 1
 spy_returns = 1
+
+# Global variable to track current plot figure
+current_figure = None
 
 
 
@@ -128,7 +134,10 @@ def drop_data(dataframes, drop_date, pred_date = None):
     pred_data = pd.DataFrame()
     for ticker, df in tqdm(dataframes.items(), total=len(dataframes), desc="Dropping data", unit="ticker"):
         # Get test data NOT Y TRAIN
-        dataframes[ticker].drop(df[df['date'] <= sp_addition_dates[ticker]].index, inplace=True)
+        # Convert sp_addition_dates to the same format as the date column
+        if ticker in sp_addition_dates:
+            addition_date = pd.to_datetime(sp_addition_dates[ticker]).date()
+            dataframes[ticker].drop(df[df['date'] <= addition_date].index, inplace=True)
         if pred_date:
             pred_idx = df.index[df['date'] == pred_date]
             if not pred_idx.empty:
@@ -244,9 +253,99 @@ def create_pred_sliding_window(scaled_dataframe, scaled_features):
     
     return x_pred
 
+def plot_predictions_vs_actual(predictions, pred_df, date):
+    """Plot predicted vs actual returns for each stock - ordered by predicted returns"""
+    # Create lists to store data for plotting
+    plot_data = []
+    
+    # Extract data for plotting
+    for ticker, pred_return in predictions.items():
+        ticker_data = pred_df[pred_df['ticker'] == ticker]['return_21d']
+        if not ticker_data.empty:
+            actual_return = ticker_data.iloc[0] * 100  # Convert to percentage
+            predicted_return = pred_return * 100  # Convert to percentage
+            plot_data.append((ticker, predicted_return, actual_return))
+    
+    # Sort by predicted returns (ascending)
+    plot_data.sort(key=lambda x: x[1])
+    
+    # Unpack sorted data
+    tickers = [item[0] for item in plot_data]
+    predicted_returns = [item[1] for item in plot_data]
+    actual_returns = [item[2] for item in plot_data]
+    
+    # Close previous figure if it exists
+    global current_figure
+    if current_figure is not None:
+        plt.close(current_figure)
+    
+    # Set up the new plot
+    current_figure = plt.figure(figsize=(16, 10))
+    
+    # Create x positions for the stocks
+    x_positions = range(len(tickers))
+    
+    # Plot predicted returns as blue bars
+    plt.bar(x_positions, predicted_returns, alpha=0.7, color='steelblue', 
+            label='Predicted Returns', width=0.8)
+    
+    # Plot actual returns as red circles
+    plt.scatter(x_positions, actual_returns, color='red', s=60, 
+               label='Actual Returns', zorder=5, alpha=0.8)
+    
+    # Set appropriate y-axis limits with some padding
+    all_returns = predicted_returns + actual_returns
+    y_min = min(all_returns) - 1
+    y_max = max(all_returns) + 1
+    plt.ylim(y_min, y_max)
+    
+    # Customize the plot
+    plt.xlabel('Stocks (Ordered by Predicted Returns)', fontsize=12)
+    plt.ylabel('Returns (%)', fontsize=12)
+    plt.title(f'Predicted vs Actual Returns for {date}', fontsize=14, fontweight='bold')
+    
+    # Set x-axis ticks and labels
+    plt.xticks(x_positions, tickers, rotation=45, ha='right', fontsize=8)
+    
+    # Add horizontal line at 0%
+    plt.axhline(y=0, color='black', linestyle='-', alpha=0.3, linewidth=0.8)
+    
+    # Add legend
+    plt.legend(loc='upper left', fontsize=10)
+    
+    # Add grid
+    plt.grid(True, alpha=0.3, axis='y')
+    
+    # Calculate and display statistics
+    correlation = np.corrcoef(predicted_returns, actual_returns)[0, 1]
+    rmse = np.sqrt(np.mean([(p - a)**2 for p, a in zip(predicted_returns, actual_returns)]))
+    mae = np.mean([abs(p - a) for p, a in zip(predicted_returns, actual_returns)])
+    
+    # Add statistics text box
+    stats_text = f'Correlation: {correlation:.3f}\nRMSE: {rmse:.2f}%\nMAE: {mae:.2f}%\nStocks: {len(tickers)}'
+    plt.text(0.98, 0.98, stats_text, transform=plt.gca().transAxes, 
+             verticalalignment='top', horizontalalignment='right', fontsize=10,
+             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+    
+    # Highlight top 10 predictions with annotations
+    if len(tickers) >= 10:
+        top_10_start = len(tickers) - 10
+        for i in range(top_10_start, len(tickers)):
+            plt.annotate(f'{actual_returns[i]:.1f}%', 
+                        (i, actual_returns[i]), 
+                        xytext=(0, 10), textcoords='offset points',
+                        ha='center', fontsize=8, color='darkred',
+                        bbox=dict(boxstyle='round,pad=0.2', facecolor='yellow', alpha=0.7))
+    
+    plt.tight_layout()
+    
+    # Close any existing plots before showing new one
+    plt.show(block=False)  # Non-blocking show
+    plt.pause(0.1)  # Small pause to ensure plot is displayed
+
 def train_test_loop(spy_df, dataframes, features):
 
-    for i in range(67, len(spy_df) - 21, 21):
+    for i in range(8316, len(spy_df) - 21, 21):
         # Clear any old sliding-window files so we only train on current window
         for f in os.listdir(temp_data_dir):
             os.remove(os.path.join(temp_data_dir, f))
@@ -310,6 +409,9 @@ def train_test_loop(spy_df, dataframes, features):
         print("\nAverage Predicted Return for Top 10: {:.2f}%".format(avg_predicted_return*100))
         print("\nAverage Actual Return for Top 10: {:.2f}%".format(avg_real_return*100))
         print(f"SPY Return: {spy_pred*100:.2f}%")
+        
+        # Plot predictions vs actual returns
+        plot_predictions_vs_actual(predictions, pred_df, spy_df.iloc[i + 21]['date'])
 
         global win_count, lose_count, wins, losses, returns
 

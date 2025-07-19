@@ -20,7 +20,10 @@ dependencies = [
     "pympler (>=1.1,<2.0)",
     "yfinance (>=0.2.55,<0.3.0)",
     "optuna (>=4.2.1,<5.0.0)",
-    "pandas-ta (>=0.3.14b0,<0.4.0)"
+    "pandas-ta (>=0.3.14b0,<0.4.0)",
+    "tensorflow (>=2.18.0,<3.0.0)",
+    "ta-lib (>=0.4.32,<0.5.0)",
+    "numpy (>=1.26.0,<2.0.0)"
 ]
 
 [tool.poetry]
